@@ -1,0 +1,6 @@
+strands-agents
+strands-agents-tools
+strands-agents[a2a]
+strands-agents-tools[a2a_client]
+boto3
+streamlit
