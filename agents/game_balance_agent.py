@@ -78,7 +78,8 @@ class GameBalanceCoordinator:
                                     response_text = part.root.text
                 
                 if response_text:
-                    print(f"[GAME BALANCE]    ✅ Response from {agent_name} ({len(response_text)} chars)")
+                    print(f"[GAME BALANCE]    ✅ Response from {agent_name}:")
+                    print(f"[GAME BALANCE]    {response_text}")
                     return response_text
                 else:
                     return "No response received"
