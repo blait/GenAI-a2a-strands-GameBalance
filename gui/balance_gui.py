@@ -38,46 +38,48 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 게임 밸런스 분
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Send to agent
+    # Send to agent with streaming
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
+        thinking_placeholder = st.empty()
+        answer_placeholder = st.empty()
+        
+        thinking_text = ""
+        answer_text = ""
         
         try:
+            import json
             response = requests.post(
-                f"{AGENT_URL}/ask",
+                f"{AGENT_URL}/ask_stream",
                 json={"query": prompt},
-                timeout=60
+                stream=True,
+                timeout=120
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                # Parse response structure
-                if "response" in result and "message" in result["response"]:
-                    content = result["response"]["message"]["content"]
-                    response_text = content[0]["text"] if content else "응답 없음"
-                    
-                    # Extract thinking and answer
-                    if "<thinking>" in response_text and "</thinking>" in response_text:
-                        thinking_start = response_text.find("<thinking>") + 10
-                        thinking_end = response_text.find("</thinking>")
-                        thinking = response_text[thinking_start:thinking_end].strip()
-                        answer = response_text[thinking_end + 11:].strip()
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        data = json.loads(line[6:])
                         
-                        with st.expander("🧠 사고 과정 보기"):
-                            st.markdown(thinking)
-                        message_placeholder.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer, "thinking": thinking})
-                    else:
-                        message_placeholder.markdown(response_text)
-                        st.session_state.messages.append({"role": "assistant", "content": response_text})
-                else:
-                    response_text = str(result)
-                    message_placeholder.markdown(response_text)
-                    st.session_state.messages.append({"role": "assistant", "content": response_text})
-            else:
-                error_msg = f"오류: {response.status_code}"
-                message_placeholder.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                        if data['type'] == 'thinking':
+                            thinking_text += data['content']
+                            with thinking_placeholder.expander("🧠 사고 과정 (실시간)", expanded=True):
+                                st.code(thinking_text.replace("<thinking>", "").replace("</thinking>", ""), language=None)
+                        elif data['type'] == 'answer':
+                            answer_text += data['content']
+                            answer_placeholder.markdown(answer_text)
+                        elif data['type'] == 'done':
+                            break
+            
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": answer_text,
+                "thinking": thinking_text.replace("<thinking>", "").replace("</thinking>", "")
+            })
+            
+        except Exception as e:
+            st.error(f"에러 발생: {str(e)}")
+            st.info("에이전트가 실행 중인지 확인하세요: `python agents/game_balance_agent.py`")
         
         except Exception as e:
             error_msg = f"연결 실패: {str(e)}"

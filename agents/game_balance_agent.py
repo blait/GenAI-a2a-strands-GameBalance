@@ -216,6 +216,78 @@ def main():
             "request_timestamp": request_timestamp
         }
     
+    @app.post("/ask_stream")
+    async def ask_stream(request: QueryRequest):
+        """Streaming endpoint for real-time thinking"""
+        from fastapi.responses import StreamingResponse
+        import json
+        import queue
+        import threading
+        import sys
+        
+        event_queue = queue.Queue()
+        
+        class StreamCapture:
+            def __init__(self, queue, original):
+                self.queue = queue
+                self.original = original
+                
+            def write(self, text):
+                self.original.write(text)
+                self.original.flush()
+                if text and text.strip():
+                    self.queue.put(('log', text))
+                    
+            def flush(self):
+                self.original.flush()
+        
+        def run_agent():
+            try:
+                old_stdout = sys.stdout
+                sys.stdout = StreamCapture(event_queue, old_stdout)
+                
+                print(f"\n🎯 Query: {request.query}\n")
+                
+                result = agent(request.query)
+                
+                sys.stdout = old_stdout
+                
+                # Parse result
+                if hasattr(result, 'message') and hasattr(result.message, 'content'):
+                    content = result.message.content[0].text if result.message.content else ""
+                else:
+                    content = str(result)
+                
+                event_queue.put(('answer', content))
+                event_queue.put(('done', None))
+            except Exception as e:
+                event_queue.put(('error', str(e)))
+        
+        async def generate():
+            thread = threading.Thread(target=run_agent, daemon=True)
+            thread.start()
+            
+            while True:
+                try:
+                    event_type, data = event_queue.get(timeout=0.1)
+                    
+                    if event_type == 'done':
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                        break
+                    elif event_type == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'content': data})}\n\n"
+                        break
+                    elif event_type == 'log':
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': data})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': event_type, 'content': data})}\n\n"
+                except queue.Empty:
+                    await asyncio.sleep(0.1)
+            
+            thread.join(timeout=1)
+        
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    
     # Start REST API in separate thread
     def run_rest_api():
         uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
