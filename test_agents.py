@@ -37,17 +37,20 @@ async def test_agent(agent_url: str, agent_name: str, query: str):
             
             # Send message
             print(f"📤 Sending message...")
-            async for event in client.send_message(msg):
-                print(f"📥 Response:")
-                # Only print the artifact text, not the full history
-                if hasattr(event, 'artifacts') and event.artifacts:
-                    for artifact in event.artifacts:
-                        for part in artifact.parts:
-                            if hasattr(part.root, 'text'):
-                                print(part.root.text)
-                else:
-                    print(event)
-                break  # Only get first response for non-streaming
+            try:
+                async for event in client.send_message(msg):
+                    print(f"📥 Response:")
+                    if hasattr(event, 'artifacts') and event.artifacts:
+                        for artifact in event.artifacts:
+                            for part in artifact.parts:
+                                if hasattr(part.root, 'text'):
+                                    print(part.root.text)
+                    else:
+                        event_str = str(event)
+                        print(event_str[:500] + "..." if len(event_str) > 500 else event_str)
+                    break
+            except Exception as e:
+                print(f"❌ Message Error: {e}")
             
             return True
             
