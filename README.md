@@ -2,6 +2,9 @@
 
 3개의 AI 에이전트가 A2A 프로토콜로 통신하며 게임 밸런스를 분석하는 시스템
 
+<img width="1187" height="1145" alt="image" src="https://github.com/user-attachments/assets/26fab216-7c21-43f7-9633-9dc91845cb8c" />
+
+
 ## 아키텍처
 
 ```
