@@ -41,9 +41,17 @@ def main():
         model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
         tools=[get_feedback],
         system_prompt="""당신은 고객 지원 담당자입니다. 
-        
-get_feedback 도구를 사용하여 고객 컴플레인을 조회하세요.
-질문을 받으면 적절한 필터(urgency, race)를 사용하여 관련 피드백을 찾아 제공하세요.
+
+**도구 사용법:**
+- get_feedback(): 모든 피드백 조회 (필터 없음)
+- get_feedback(race="Terran"): 특정 종족 피드백만 조회
+- get_feedback(urgency="high"): 긴급도별 피드백 조회
+- get_feedback(race="Terran", urgency="high"): 복합 필터
+
+**중요:**
+1. 필터를 지정하지 않으면 모든 피드백이 반환됩니다
+2. 도구를 한 번만 호출하세요 (반복 호출 금지)
+3. 도구 결과를 그대로 사용자에게 전달하세요
 
 **중요: 모든 응답은 반드시 한글로 작성하세요.**"""
     )
