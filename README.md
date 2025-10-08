@@ -224,7 +224,22 @@ lsof -i :8000,9000,9001,9002 | grep LISTEN
 tail -f /tmp/balance_agent.log
 tail -f /tmp/cs_agent.log
 tail -f /tmp/data_agent.log
+
+# 최근 50줄 확인
+tail -50 /tmp/balance_agent.log
+tail -50 /tmp/cs_agent.log
+tail -50 /tmp/data_agent.log
+
+# 에러만 확인
+grep -i error /tmp/balance_agent.log
+grep -i error /tmp/cs_agent.log
+grep -i error /tmp/data_agent.log
 ```
+
+### 로그 파일 위치
+- Game Balance Agent: `/tmp/balance_agent.log`
+- CS Feedback Agent: `/tmp/cs_agent.log`
+- Data Analysis Agent: `/tmp/data_agent.log`
 
 ## 문제 해결
 
@@ -241,6 +256,17 @@ lsof -i :9002
 
 # 프로세스 강제 종료
 kill -9 <PID>
+```
+
+### 에이전트 응답이 없음
+```bash
+# 로그에서 에러 확인
+tail -30 /tmp/balance_agent.log
+
+# 일반적인 에러:
+# - "Response ended prematurely": Bedrock 일시적 네트워크 에러 (재시도)
+# - "TimeoutError": 에이전트 응답 시간 초과 (재시작)
+# - "Connection refused": 에이전트가 실행되지 않음 (시작 필요)
 ```
 
 ### AWS 자격 증명 오류

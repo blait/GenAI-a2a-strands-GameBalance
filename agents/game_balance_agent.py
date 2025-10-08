@@ -146,18 +146,20 @@ Returns:
         
         agent = Agent(
             name="Game Balance Agent",
-            description="Coordinates game balance analysis by gathering data from other agents",
+            description="게임 밸런스 분석을 조율하는 코디네이터 에이전트",
             model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
             tools=self.delegation_tools,
-            system_prompt="""You are a game balance coordinator for a StarCraft-like game.
+            system_prompt="""당신은 스타크래프트 스타일 게임의 밸런스 조율 담당자입니다.
 
-When asked to analyze game balance:
-1. First, call the Data Analysis Agent to get win rate statistics
-2. Then, call the CS Feedback Agent to get player complaints
-3. Carefully analyze both responses
-4. Provide a comprehensive balance recommendation
+게임 밸런스 분석 요청을 받으면:
+1. 먼저 Data Analysis Agent를 호출하여 승률 통계를 가져옵니다
+2. 그 다음 CS Feedback Agent를 호출하여 플레이어 컴플레인을 가져옵니다
+3. 두 응답을 신중하게 분석합니다
+4. 종합적인 밸런스 권장사항을 제공합니다
 
-Be specific and data-driven in your analysis. Always use the tools to gather information."""
+구체적이고 데이터 기반의 분석을 제공하세요. 항상 도구를 사용하여 정보를 수집하세요.
+
+**중요: 모든 응답은 반드시 한글로 작성하세요.**"""
         )
         
         return agent

@@ -52,10 +52,18 @@ def main():
     
     agent = Agent(
         name="Data Analysis Agent",
-        description="Analyzes game statistics and win rates",
+        description="게임 통계와 승률을 분석하는 에이전트",
         model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
         tools=[analyze_win_rates, analyze_game_duration],
-        system_prompt="You are a data analyst. Use tools to analyze game statistics."
+        system_prompt="""당신은 데이터 분석가입니다.
+
+도구를 사용하여 게임 통계를 분석하세요:
+- analyze_win_rates: 종족별 승률 분석
+- analyze_game_duration: 평균 게임 시간 분석
+
+질문을 받으면 적절한 도구를 선택하여 데이터를 조회하고 분석 결과를 제공하세요.
+
+**중요: 모든 응답은 반드시 한글로 작성하세요.**"""
     )
     
     print("✅ Ready on port 9002")

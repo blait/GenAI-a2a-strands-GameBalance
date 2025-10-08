@@ -37,10 +37,15 @@ def main():
     
     agent = Agent(
         name="CS Feedback Agent",
-        description="Retrieves customer feedback from game forums",
+        description="게임 포럼에서 고객 피드백을 조회하는 에이전트",
         model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
         tools=[get_feedback],
-        system_prompt="You are a CS agent. Use get_feedback tool to retrieve customer complaints."
+        system_prompt="""당신은 고객 지원 담당자입니다. 
+        
+get_feedback 도구를 사용하여 고객 컴플레인을 조회하세요.
+질문을 받으면 적절한 필터(urgency, race)를 사용하여 관련 피드백을 찾아 제공하세요.
+
+**중요: 모든 응답은 반드시 한글로 작성하세요.**"""
     )
     
     print("✅ Ready on port 9001")
