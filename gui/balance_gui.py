@@ -26,6 +26,9 @@ if "messages" not in st.session_state:
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
+        if message["role"] == "assistant" and "thinking" in message:
+            with st.expander("🧠 사고 과정 보기"):
+                st.markdown(message["thinking"])
         st.markdown(message["content"])
 
 # Chat input
@@ -52,11 +55,25 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 게임 밸런스 분
                 if "response" in result and "message" in result["response"]:
                     content = result["response"]["message"]["content"]
                     response_text = content[0]["text"] if content else "응답 없음"
+                    
+                    # Extract thinking and answer
+                    if "<thinking>" in response_text and "</thinking>" in response_text:
+                        thinking_start = response_text.find("<thinking>") + 10
+                        thinking_end = response_text.find("</thinking>")
+                        thinking = response_text[thinking_start:thinking_end].strip()
+                        answer = response_text[thinking_end + 11:].strip()
+                        
+                        with st.expander("🧠 사고 과정 보기"):
+                            st.markdown(thinking)
+                        message_placeholder.markdown(answer)
+                        st.session_state.messages.append({"role": "assistant", "content": answer, "thinking": thinking})
+                    else:
+                        message_placeholder.markdown(response_text)
+                        st.session_state.messages.append({"role": "assistant", "content": response_text})
                 else:
                     response_text = str(result)
-                
-                message_placeholder.markdown(response_text)
-                st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    message_placeholder.markdown(response_text)
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
             else:
                 error_msg = f"오류: {response.status_code}"
                 message_placeholder.error(error_msg)
