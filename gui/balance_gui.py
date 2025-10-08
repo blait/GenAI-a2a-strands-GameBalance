@@ -5,21 +5,19 @@ Port: 8501
 """
 
 import streamlit as st
-import httpx
-import asyncio
-from uuid import uuid4
+import requests
 
 # Agent URL
-AGENT_URL = "http://localhost:9000"
+AGENT_URL = "http://localhost:8000"
 
 st.set_page_config(
-    page_title="Game Balance Agent",
+    page_title="게임 밸런스 에이전트",
     page_icon="⚖️",
     layout="wide"
 )
 
-st.title("⚖️ Game Balance Agent")
-st.caption("Coordinates CS feedback and data analysis for game balance")
+st.title("⚖️ 게임 밸런스 에이전트")
+st.caption("다른 에이전트들과 A2A 통신하여 종합 밸런스 분석 제공")
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -31,7 +29,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Chat input
-if prompt := st.chat_input("Ask about game balance..."):
+if prompt := st.chat_input("질문을 입력하세요 (예: 게임 밸런스 분석해줘)"):
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -42,85 +40,53 @@ if prompt := st.chat_input("Ask about game balance..."):
         message_placeholder = st.empty()
         
         try:
-            # Create A2A message
-            payload = {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": prompt}],
-                    "messageId": uuid4().hex
-                }
-            }
+            response = requests.post(
+                f"{AGENT_URL}/ask",
+                json={"query": prompt},
+                timeout=60
+            )
             
-            # Send request
-            with httpx.Client(timeout=60.0) as client:
-                response = client.post(
-                    f"{AGENT_URL}/send_message",
-                    json=payload
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Extract response text
-                    if "result" in result:
-                        task_result = result["result"]
-                        
-                        # Handle different response formats
-                        if isinstance(task_result, dict):
-                            if "status" in task_result and "message" in task_result["status"]:
-                                # Extract from status message
-                                status_msg = task_result["status"]["message"]
-                                if isinstance(status_msg, dict) and "parts" in status_msg:
-                                    response_text = ""
-                                    for part in status_msg["parts"]:
-                                        if "text" in part:
-                                            response_text += part["text"]
-                                else:
-                                    response_text = str(status_msg)
-                            elif "artifacts" in task_result:
-                                # Extract from artifacts
-                                response_text = ""
-                                for artifact in task_result["artifacts"]:
-                                    if "text" in artifact:
-                                        response_text += artifact["text"]
-                            else:
-                                response_text = str(task_result)
-                        else:
-                            response_text = str(task_result)
-                    else:
-                        response_text = str(result)
-                    
-                    message_placeholder.markdown(response_text)
-                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+            if response.status_code == 200:
+                result = response.json()
+                # Parse response structure
+                if "response" in result and "message" in result["response"]:
+                    content = result["response"]["message"]["content"]
+                    response_text = content[0]["text"] if content else "응답 없음"
                 else:
-                    error_msg = f"Error: {response.status_code} - {response.text}"
-                    message_placeholder.error(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                    response_text = str(result)
+                
+                message_placeholder.markdown(response_text)
+                st.session_state.messages.append({"role": "assistant", "content": response_text})
+            else:
+                error_msg = f"오류: {response.status_code}"
+                message_placeholder.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
         
         except Exception as e:
-            error_msg = f"Connection error: {str(e)}"
+            error_msg = f"연결 실패: {str(e)}"
             message_placeholder.error(error_msg)
             st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 # Sidebar
 with st.sidebar:
-    st.header("Agent Info")
+    st.header("에이전트 정보")
     st.info(f"**URL**: {AGENT_URL}")
-    st.info("**Port**: 9000")
+    st.info("**포트**: 8000")
     
-    st.header("Quick Actions")
-    if st.button("Analyze Game Balance"):
-        st.session_state.messages.append({"role": "user", "content": "Analyze current game balance"})
+    st.header("빠른 질문")
+    if st.button("게임 밸런스 분석"):
+        st.session_state.messages.append({"role": "user", "content": "게임 밸런스 분석해줘"})
         st.rerun()
     
-    if st.button("Check Terran Balance"):
-        st.session_state.messages.append({"role": "user", "content": "Is Terran too strong?"})
+    if st.button("테란 승률 확인"):
+        st.session_state.messages.append({"role": "user", "content": "테란 승률은?"})
         st.rerun()
     
-    if st.button("Get Balance Recommendations"):
-        st.session_state.messages.append({"role": "user", "content": "What balance changes are needed?"})
+    if st.button("저그 피드백 확인"):
+        st.session_state.messages.append({"role": "user", "content": "저그 피드백 보여줘"})
         st.rerun()
     
-    if st.button("Clear Chat"):
+    if st.button("대화 기록 초기화"):
         st.session_state.messages = []
         st.rerun()
+

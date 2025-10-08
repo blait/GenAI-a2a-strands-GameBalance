@@ -48,6 +48,86 @@ export AWS_REGION=us-east-1
 ```
 
 ### 3. 전체 시스템 시작
+
+#### 에이전트 실행
+```bash
+# 모든 에이전트 종료
+pkill -f "game_balance_agent|data_analysis_agent|cs_feedback_agent"
+
+# 에이전트 시작 (순서 중요)
+cd "/Users/hyeonsup/aws goa 2025/msk-a2a-demo/game-balance-a2a"
+venv/bin/python agents/cs_feedback_agent.py > /tmp/cs_agent.log 2>&1 &
+venv/bin/python agents/data_analysis_agent.py > /tmp/data_agent.log 2>&1 &
+sleep 3
+venv/bin/python agents/game_balance_agent.py > /tmp/balance_agent.log 2>&1 &
+
+# 포트 확인
+lsof -i :8000,9001,9002 | grep LISTEN
+```
+
+#### GUI 실행
+```bash
+# 모든 GUI 시작
+./run_gui.sh
+
+# 개별 GUI 실행
+venv/bin/streamlit run gui/balance_gui.py --server.port 8501
+venv/bin/streamlit run gui/cs_gui.py --server.port 8502
+venv/bin/streamlit run gui/analysis_gui.py --server.port 8503
+```
+
+**GUI 접속:**
+- **Balance Agent GUI**: http://localhost:8501 (A2A Hub - 다른 에이전트 호출)
+- **CS Feedback Agent GUI**: http://localhost:8502 (피드백 조회)
+- **Data Analysis Agent GUI**: http://localhost:8503 (통계 분석)
+
+**GUI 종료:**
+```bash
+pkill -f streamlit
+```
+
+### 4. 테스트
+
+#### CLI 테스트
+```bash
+# 밸런스 분석 (A2A 호출 포함)
+./trace.sh "게임 밸런스 분석해줘"
+
+# 특정 종족 피드백
+./trace.sh "테란 피드백만 보여줘"
+
+# 승률 조회
+curl -X POST http://localhost:9001/ask \
+  -H "Content-Type: application/json" \
+  -d '{"query": "테란 승률은?"}'
+```
+
+#### GUI 테스트
+1. Balance Agent GUI (http://localhost:8501)에서 "게임 밸런스 분석해줘" 입력
+2. A2A 호출로 Data Agent와 CS Agent가 자동으로 호출됨
+3. 각 에이전트 GUI에서 직접 질문도 가능
+
+## 시스템 구조
+
+### 에이전트 포트
+- **Game Balance Agent**: 8000 (A2A Hub)
+- **Data Analysis Agent**: 9001
+- **CS Feedback Agent**: 9002
+
+### GUI 포트
+- **Balance GUI**: 8501
+- **CS GUI**: 8502
+- **Analysis GUI**: 8503
+
+### A2A 통신 흐름
+```
+사용자 → Balance Agent (8000)
+         ├─→ Data Analysis Agent (9001) [A2A 호출]
+         └─→ CS Feedback Agent (9002) [A2A 호출]
+         
+사용자 → Data Analysis Agent (9001) [직접 호출]
+사용자 → CS Feedback Agent (9002) [직접 호출]
+```
 ```bash
 # 모든 에이전트 시작
 python run_system.py

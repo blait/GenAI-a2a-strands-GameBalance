@@ -2,7 +2,11 @@
 from strands import Agent, tool
 from strands.multiagent.a2a import A2AServer
 from strands.models.bedrock import BedrockModel
+from fastapi import FastAPI
+from pydantic import BaseModel
 import pandas as pd
+import uvicorn
+import asyncio
 
 GAME_DATA = [
     {"game_id": 1, "race": "Terran", "result": "win", "duration": 15},
@@ -47,15 +51,17 @@ def analyze_game_duration(race: str = None) -> str:
     stats = df.groupby("race")["duration"].mean()
     return "\n".join([f"{r}: {d:.1f}분" for r, d in stats.items()])
 
-def main():
-    print("📊 Starting Data Analysis Agent...")
-    
-    agent = Agent(
-        name="Data Analysis Agent",
-        description="게임 통계와 승률을 분석하는 에이전트",
-        model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
-        tools=[analyze_win_rates, analyze_game_duration],
-        system_prompt="""당신은 데이터 분석가입니다.
+app = FastAPI()
+
+class QueryRequest(BaseModel):
+    query: str
+
+agent = Agent(
+    name="Data Analysis Agent",
+    description="게임 통계와 승률을 분석하는 에이전트",
+    model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
+    tools=[analyze_win_rates, analyze_game_duration],
+    system_prompt="""당신은 데이터 분석가입니다.
 
 도구를 사용하여 게임 통계를 분석하세요:
 - analyze_win_rates: 종족별 승률 분석
@@ -64,11 +70,26 @@ def main():
 질문을 받으면 적절한 도구를 선택하여 데이터를 조회하고 분석 결과를 제공하세요.
 
 **중요: 모든 응답은 반드시 한글로 작성하세요.**"""
-    )
+)
+
+@app.post("/ask")
+async def ask(request: QueryRequest):
+    result = await asyncio.to_thread(lambda: agent(request.query))
+    return {"query": request.query, "response": result}
+
+def main():
+    print("📊 Starting Data Analysis Agent...")
+    print("  - A2A Server on port 9003")
+    print("  - HTTP API on port 9004")
     
-    print("✅ Ready on port 9002")
-    server = A2AServer(agent=agent, port=9002)
-    server.serve()
+    # Start A2A Server in background thread
+    import threading
+    a2a_server = A2AServer(agent=agent, port=9003)
+    a2a_thread = threading.Thread(target=a2a_server.serve, daemon=True)
+    a2a_thread.start()
+    
+    # Start FastAPI server
+    uvicorn.run(app, host="127.0.0.1", port=9004)
 
 if __name__ == "__main__":
     main()

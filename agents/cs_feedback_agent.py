@@ -2,6 +2,10 @@
 from strands import Agent, tool
 from strands.multiagent.a2a import A2AServer
 from strands.models.bedrock import BedrockModel
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
+import asyncio
 
 FEEDBACK_DATA = [
     {"race": "Terran", "complaint": "테란 마린 러시가 너무 강력합니다. 초반 방어가 불가능해요.", "upvotes": 245, "urgency": "high", "date": "2025-10-01"},
@@ -32,15 +36,17 @@ def get_feedback(urgency: str = None, race: str = None) -> str:
     
     return "\n".join(result) if result else "No feedback found"
 
-def main():
-    print("📞 Starting CS Feedback Agent...")
-    
-    agent = Agent(
-        name="CS Feedback Agent",
-        description="게임 포럼에서 고객 피드백을 조회하는 에이전트",
-        model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
-        tools=[get_feedback],
-        system_prompt="""당신은 고객 지원 담당자입니다. 
+app = FastAPI()
+
+class QueryRequest(BaseModel):
+    query: str
+
+agent = Agent(
+    name="CS Feedback Agent",
+    description="게임 포럼에서 고객 피드백을 조회하는 에이전트",
+    model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
+    tools=[get_feedback],
+    system_prompt="""당신은 고객 지원 담당자입니다. 
 
 **도구 사용법:**
 - get_feedback(): 모든 피드백 조회 (필터 없음)
@@ -54,11 +60,26 @@ def main():
 3. 도구 결과를 그대로 사용자에게 전달하세요
 
 **중요: 모든 응답은 반드시 한글로 작성하세요.**"""
-    )
+)
+
+@app.post("/ask")
+async def ask(request: QueryRequest):
+    result = await asyncio.to_thread(lambda: agent(request.query))
+    return {"query": request.query, "response": result}
+
+def main():
+    print("📞 Starting CS Feedback Agent...")
+    print("  - A2A Server on port 9001")
+    print("  - HTTP API on port 9002")
     
-    print("✅ Ready on port 9001")
-    server = A2AServer(agent=agent, port=9001)
-    server.serve()
+    # Start A2A Server in background thread
+    import threading
+    a2a_server = A2AServer(agent=agent, port=9001)
+    a2a_thread = threading.Thread(target=a2a_server.serve, daemon=True)
+    a2a_thread.start()
+    
+    # Start FastAPI server
+    uvicorn.run(app, host="127.0.0.1", port=9002)
 
 if __name__ == "__main__":
     main()

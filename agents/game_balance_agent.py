@@ -14,8 +14,8 @@ class GameBalanceCoordinator:
     
     def __init__(self):
         self.known_agents = {
-            "http://localhost:9001": None,
-            "http://localhost:9002": None
+            "http://localhost:9001": None,  # CS Agent A2A
+            "http://localhost:9003": None   # Data Agent A2A
         }
         self.agent_clients = {}
         self.httpx_client = None
