@@ -123,6 +123,22 @@ streamlit run gui/analysis_gui.py --server.port 8503
 
 ## A2A 프로토콜 테스트
 
+### trace.sh로 에이전트 대화 흐름 시각화
+```bash
+# 기본 사용
+./trace.sh "테란 승률은?"
+
+# 출력 예시:
+# 🎯 Query: 테란 승률은?
+# 📊 Total Cycles: 3
+# 🆕 New Request: Cycle 2 ~ 3
+# 
+# 📍 Cycle 2 🆕
+# 🧠 [Thinking] ...
+# 📞 → Data Analysis Agent: Retrieve win rate statistics for Terran race.
+# ✅ ← Data Analysis Agent: Terran has a win rate of 100.00%...
+```
+
 ### curl로 직접 테스트
 ```bash
 # Game Balance Agent
@@ -177,7 +193,44 @@ game-balance-a2a/
 - HTTP 기반 통신
 - 에이전트 간 느슨한 결합
 
+## 에이전트 관리
+
+### 에이전트 재시작 (히스토리 초기화)
+에이전트는 대화 히스토리를 메모리에 저장하므로, 오래 실행하면 메시지 크기가 커져 "too large" 에러가 발생할 수 있습니다.
+
+```bash
+# 1. 모든 에이전트 종료
+pkill -f "game_balance_agent|data_analysis_agent|cs_feedback_agent"
+
+# 2. 재시작 (절대 경로 사용)
+cd "/Users/hyeonsup/aws goa 2025/msk-a2a-demo/game-balance-a2a"
+
+venv/bin/python agents/cs_feedback_agent.py > /tmp/cs_agent.log 2>&1 &
+venv/bin/python agents/data_analysis_agent.py > /tmp/data_agent.log 2>&1 &
+sleep 3
+venv/bin/python agents/game_balance_agent.py > /tmp/balance_agent.log 2>&1 &
+
+# 3. 확인 (10초 대기 후)
+sleep 10
+lsof -i :8000,9000,9001,9002 | grep LISTEN
+```
+
+### 에이전트 상태 확인
+```bash
+# 포트 확인
+lsof -i :8000,9000,9001,9002 | grep LISTEN
+
+# 로그 확인
+tail -f /tmp/balance_agent.log
+tail -f /tmp/cs_agent.log
+tail -f /tmp/data_agent.log
+```
+
 ## 문제 해결
+
+### "The tool result was too large!" 에러
+- **원인**: 에이전트가 대화 히스토리를 계속 쌓아서 메시지 크기 초과
+- **해결**: 위의 "에이전트 재시작" 절차 수행
 
 ### 에이전트가 시작되지 않음
 ```bash
@@ -186,7 +239,7 @@ lsof -i :9000
 lsof -i :9001
 lsof -i :9002
 
-# 프로세스 종료
+# 프로세스 강제 종료
 kill -9 <PID>
 ```
 
