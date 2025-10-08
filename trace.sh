@@ -20,8 +20,9 @@ except json.JSONDecodeError as e:
     sys.exit(1)
 
 traces = data['response']['metrics']['traces']
+request_timestamp = data.get('request_timestamp', 0)
 
-# Find new request start - look for thinking that matches current query
+# Find new request start using timestamp
 new_request_start = None
 cycle_num = 0
 
@@ -30,33 +31,13 @@ for trace in traces:
         continue
     cycle_num += 1
     
-    for child in trace.get('children', []):
-        if 'stream_messages' in child['name']:
-            msg = child.get('message')
-            if not msg:
-                continue
-            for c in msg.get('content', []):
-                if 'text' in c and '<thinking>' in c['text']:
-                    thinking = c['text'].lower()
-                    query_lower = data['query'].lower()
-                    
-                    # Extract all meaningful words from query (length > 1)
-                    query_words = [w for w in query_lower.split() if len(w) > 1]
-                    
-                    # Check if thinking mentions user input AND contains query keywords
-                    has_user_pattern = ('user has asked' in thinking or 
-                                       'user has mentioned' in thinking or 
-                                       'user is asking' in thinking)
-                    
-                    # Count how many query words appear in thinking
-                    word_matches = sum(1 for word in query_words if word in thinking)
-                    
-                    # If has user pattern and most query words match, this is likely the new request
-                    if has_user_pattern and word_matches >= len(query_words) * 0.6:
-                        new_request_start = cycle_num
-                        break
+    # Check if this cycle started after the request
+    trace_start_time = trace.get('start_time', 0)
+    if trace_start_time >= request_timestamp:
+        if new_request_start is None:
+            new_request_start = cycle_num
 
-# Fallback: if no match, assume last 2 cycles are new
+# Fallback: if no timestamp match, use last 2 cycles
 if new_request_start is None:
     new_request_start = max(1, cycle_num - 1)
 
@@ -65,6 +46,8 @@ print('='*80)
 print('🎯 Query:', data['query'])
 print(f'📊 Total Cycles: {cycle_num}')
 print(f'🆕 New Request: Cycle {new_request_start} ~ {cycle_num}')
+if request_timestamp > 0:
+    print(f'⏰ Request Time: {request_timestamp:.2f}')
 print('='*80)
 
 cycle_num = 0

@@ -201,9 +201,17 @@ def main():
     @app.post("/ask")
     async def ask(request: QueryRequest):
         """User endpoint - simple REST API"""
+        import time
+        request_timestamp = time.time()
+        
         # Invoke agent (Strands uses __call__)
         result = await asyncio.to_thread(lambda: agent(request.query))
-        return {"query": request.query, "response": result}
+        
+        return {
+            "query": request.query, 
+            "response": result,
+            "request_timestamp": request_timestamp
+        }
     
     # Start REST API in separate thread
     def run_rest_api():
