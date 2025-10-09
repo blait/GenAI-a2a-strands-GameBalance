@@ -2,6 +2,7 @@
 from strands import Agent, tool
 from strands.multiagent.a2a import A2AServer
 from strands.models.bedrock import BedrockModel
+from a2a.server.tasks import InMemoryTaskStore  # Task Store 추가
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -36,11 +37,7 @@ def get_feedback(urgency: str = None, race: str = None) -> str:
     
     return "\n".join(result) if result else "No feedback found"
 
-app = FastAPI()
-
-class QueryRequest(BaseModel):
-    query: str
-
+# Agent 생성
 agent = Agent(
     name="CS Feedback Agent",
     description="게임 포럼에서 고객 피드백을 조회하는 에이전트",
@@ -59,8 +56,18 @@ agent = Agent(
 2. 도구를 한 번만 호출하세요 (반복 호출 금지)
 3. 도구 결과를 그대로 사용자에게 전달하세요
 
+**멀티턴 대화 지원:**
+이 에이전트는 A2A Task를 통해 대화 히스토리를 자동으로 유지합니다.
+이전 대화 내용을 참고하여 답변하세요.
+
 **중요: 모든 응답은 반드시 한글로 작성하세요.**"""
 )
+
+# HTTP API (선택적 - 디버깅용)
+app = FastAPI()
+
+class QueryRequest(BaseModel):
+    query: str
 
 @app.post("/ask")
 async def ask(request: QueryRequest):
@@ -140,14 +147,23 @@ async def ask_stream(request: QueryRequest):
 
 def main():
     print("📞 Starting CS Feedback Agent...")
-    print("  - A2A Server on port 9001")
+    print("  - A2A Server on port 9001 (with Task Store)")
     print("  - HTTP API on port 9002")
     
-    # Start A2A Server in background thread
+    # Task Store 생성 (대화 히스토리 자동 관리)
+    task_store = InMemoryTaskStore()
+    
+    # A2A Server 시작 (Task Store 포함)
     import threading
-    a2a_server = A2AServer(agent=agent, port=9001)
+    a2a_server = A2AServer(
+        agent=agent, 
+        port=9001,
+        task_store=task_store  # 👈 Task Store 활성화
+    )
     a2a_thread = threading.Thread(target=a2a_server.serve, daemon=True)
     a2a_thread.start()
+    
+    print("  ✅ A2A Task Store enabled - Multi-turn conversations supported!")
     
     # Start FastAPI server
     uvicorn.run(app, host="127.0.0.1", port=9002)

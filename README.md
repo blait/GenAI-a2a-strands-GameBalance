@@ -4,6 +4,36 @@
 
 <img width="1187" height="1145" alt="image" src="https://github.com/user-attachments/assets/26fab216-7c21-43f7-9633-9dc91845cb8c" />
 
+## 🔄 **멀티턴 대화 지원 (A2A Task 기반)**
+
+이 시스템은 **A2A Task Store**를 활용하여 에이전트 간 멀티턴 대화를 지원합니다.
+
+### **작동 방식:**
+
+1. **첫 호출**: 새로운 Task 생성, Task ID 반환
+2. **추가 호출**: 같은 Task ID 사용 → 이전 대화 기억
+3. **A2AServer**: Task Store가 대화 히스토리 자동 관리
+
+### **사용 예시:**
+
+```python
+# Balance Agent에서
+call_data_analysis_agent("승률 알려줘")  
+# → 새 Task 생성
+
+call_data_analysis_agent("테란 상세 데이터 줘", continue_conversation=True)
+# → 같은 Task 이어가기 (이전 대화 기억!)
+```
+
+### **테스트:**
+
+```bash
+# 멀티턴 대화 테스트
+python test_multiturn.py
+```
+
+---
+
 ## 빠른 시작
 
 ```bash
@@ -47,6 +77,8 @@ aws configure
 - **역할**: 코디네이터 - 다른 에이전트 조율
 - **GUI**: http://localhost:8501
 - **기능**: 종합 밸런스 분석 및 패치 제안
+- **멀티턴**: `continue_conversation=True` 파라미터 지원
+
 
 ### 2. CS Feedback Agent (포트 9001)
 - **역할**: CS 피드백 데이터 제공

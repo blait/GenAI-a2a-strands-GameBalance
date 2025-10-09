@@ -1,166 +1,93 @@
 #!/usr/bin/env python3
-from strands import Agent, tool
-from strands.multiagent.a2a import A2AServer
-from strands.models.bedrock import BedrockModel
-from fastapi import FastAPI
-from pydantic import BaseModel
 import pandas as pd
 import uvicorn
-import asyncio
+import logging
+from starlette.applications import Starlette
+from starlette.responses import StreamingResponse
+from starlette.routing import Route
+from pydantic import BaseModel
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import AgentCard, AgentSkill, AgentCapabilities
+from data_analysis_agent_executor import DataAnalysisExecutor, agent
+import json
 
-GAME_DATA = [
-    {"game_id": 1, "race": "Terran", "result": "win", "duration": 15},
-    {"game_id": 2, "race": "Zerg", "result": "loss", "duration": 20},
-    {"game_id": 3, "race": "Protoss", "result": "loss", "duration": 18},
-    {"game_id": 4, "race": "Terran", "result": "win", "duration": 12},
-    {"game_id": 5, "race": "Terran", "result": "win", "duration": 14},
-    {"game_id": 6, "race": "Zerg", "result": "loss", "duration": 22},
-    {"game_id": 7, "race": "Protoss", "result": "win", "duration": 25},
-    {"game_id": 8, "race": "Terran", "result": "win", "duration": 11},
-    {"game_id": 9, "race": "Terran", "result": "win", "duration": 13},
-    {"game_id": 10, "race": "Zerg", "result": "loss", "duration": 19},
-] * 3
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@tool
-def analyze_win_rates(race: str = None) -> str:
-    """Analyze win rates by race
-    
-    Args:
-        race: Filter by specific race (Terran, Zerg, Protoss)
-    """
-    df = pd.DataFrame(GAME_DATA)
-    if race:
-        df = df[df["race"] == race]
-    
-    stats = df.groupby("race").apply(
-        lambda x: f"{x['race'].iloc[0]}: {(x['result'] == 'win').sum() / len(x) * 100:.2f}% ({(x['result'] == 'win').sum()}/{len(x)})"
-    )
-    return "\n".join(stats.values)
-
-@tool
-def analyze_game_duration(race: str = None) -> str:
-    """Analyze average game duration
-    
-    Args:
-        race: Filter by specific race
-    """
-    df = pd.DataFrame(GAME_DATA)
-    if race:
-        df = df[df["race"] == race]
-    
-    stats = df.groupby("race")["duration"].mean()
-    return "\n".join([f"{r}: {d:.1f}분" for r, d in stats.items()])
-
-app = FastAPI()
-
-class QueryRequest(BaseModel):
-    query: str
-
-agent = Agent(
+# Agent Card
+agent_card = AgentCard(
     name="Data Analysis Agent",
     description="게임 통계와 승률을 분석하는 에이전트",
-    model=BedrockModel(model_id="us.amazon.nova-lite-v1:0", temperature=0.3),
-    tools=[analyze_win_rates, analyze_game_duration],
-    system_prompt="""당신은 데이터 분석가입니다.
-
-도구를 사용하여 게임 통계를 분석하세요:
-- analyze_win_rates: 종족별 승률 분석
-- analyze_game_duration: 평균 게임 시간 분석
-
-질문을 받으면 적절한 도구를 선택하여 데이터를 조회하고 분석 결과를 제공하세요.
-
-**중요: 모든 응답은 반드시 한글로 작성하세요.**"""
+    url="http://localhost:9003",
+    version="1.0.0",
+    defaultInputModes=["text/plain"],
+    defaultOutputModes=["text/plain"],
+    skills=[
+        AgentSkill(
+            id="analyze_game_stats",
+            name="analyze_game_stats",
+            description="게임 통계 분석 (승률, 게임 시간 등)",
+            tags=[],
+            input_description="분석하고 싶은 종족 또는 통계 항목",
+            output_description="분석 결과"
+        )
+    ],
+    capabilities=AgentCapabilities(
+        streaming=True,
+        multi_turn=True
+    )
 )
 
-@app.post("/ask")
-async def ask(request: QueryRequest):
-    result = await asyncio.to_thread(lambda: agent(request.query))
-    return {"query": request.query, "response": result}
-
-@app.post("/ask_stream")
-async def ask_stream(request: QueryRequest):
-    """Streaming endpoint for real-time thinking"""
-    from fastapi.responses import StreamingResponse
-    import json
-    import queue
-    import threading
-    import sys
-    
-    event_queue = queue.Queue()
-    
-    class StreamCapture:
-        def __init__(self, queue, original):
-            self.queue = queue
-            self.original = original
-            
-        def write(self, text):
-            self.original.write(text)
-            self.original.flush()
-            if text and text.strip():
-                self.queue.put(('log', text))
-                
-        def flush(self):
-            self.original.flush()
-    
-    def run_agent():
-        try:
-            old_stdout = sys.stdout
-            sys.stdout = StreamCapture(event_queue, old_stdout)
-            
-            print(f"\n🎯 Query: {request.query}\n")
-            
-            result = agent(request.query)
-            
-            sys.stdout = old_stdout
-            
-            if hasattr(result, 'message') and hasattr(result.message, 'content'):
-                content = result.message.content[0].text if result.message.content else ""
-            else:
-                content = str(result)
-            
-            event_queue.put(('answer', content))
-            event_queue.put(('done', None))
-        except Exception as e:
-            event_queue.put(('error', str(e)))
+# Custom streaming endpoint
+async def ask_stream(request):
+    body = await request.json()
+    query = body.get('query', '')
     
     async def generate():
-        thread = threading.Thread(target=run_agent, daemon=True)
-        thread.start()
-        
-        while True:
-            try:
-                event_type, data = event_queue.get(timeout=0.1)
-                
-                if event_type == 'done':
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    break
-                elif event_type == 'error':
-                    yield f"data: {json.dumps({'type': 'error', 'content': data})}\n\n"
-                    break
-                elif event_type == 'log':
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': data})}\n\n"
-                else:
-                    yield f"data: {json.dumps({'type': event_type, 'content': data})}\n\n"
-            except queue.Empty:
-                await asyncio.sleep(0.1)
-        
-        thread.join(timeout=1)
+        try:
+            # Use invoke_async to get full response
+            result = await agent.invoke_async(query)
+            full_response = result.output if hasattr(result, 'output') else str(result)
+            
+            # Extract and send thinking
+            import re
+            thinking_matches = re.findall(r'<thinking>(.*?)</thinking>', full_response, re.DOTALL)
+            for thinking in thinking_matches:
+                yield f"data: {json.dumps({'type': 'thinking', 'content': thinking.strip()})}\n\n"
+            
+            # Send answer (remove thinking and response tags)
+            clean_response = re.sub(r'<thinking>.*?</thinking>', '', full_response, flags=re.DOTALL)
+            clean_response = re.sub(r'<response>|</response>', '', clean_response, flags=re.DOTALL).strip()
+            
+            if clean_response:
+                yield f"data: {json.dumps({'type': 'answer', 'content': clean_response})}\n\n"
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as e:
+            logger.error(f"Streaming error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
-def main():
-    print("📊 Starting Data Analysis Agent...")
-    print("  - A2A Server on port 9003")
-    print("  - HTTP API on port 9004")
-    
-    # Start A2A Server in background thread
-    import threading
-    a2a_server = A2AServer(agent=agent, port=9003)
-    a2a_thread = threading.Thread(target=a2a_server.serve, daemon=True)
-    a2a_thread.start()
-    
-    # Start FastAPI server
-    uvicorn.run(app, host="127.0.0.1", port=9004)
+# A2A Server
+request_handler = DefaultRequestHandler(
+    agent_executor=DataAnalysisExecutor(),
+    task_store=InMemoryTaskStore()
+)
+
+a2a_server = A2AStarletteApplication(
+    agent_card=agent_card,
+    http_handler=request_handler
+)
+
+# Build base app
+app = a2a_server.build()
+
+# Add custom route
+app.routes.append(Route('/ask_stream', ask_stream, methods=['POST']))
 
 if __name__ == "__main__":
-    main()
+    logger.info("Starting Data Analysis Agent on port 9003...")
+    uvicorn.run(app, host="0.0.0.0", port=9003)

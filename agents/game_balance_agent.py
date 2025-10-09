@@ -10,7 +10,7 @@ from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.types import Message, Part, TextPart, Role
 
 class GameBalanceCoordinator:
-    """Game Balance Coordinator using A2A protocol"""
+    """Game Balance Coordinator using A2A protocol with Task-based sessions"""
     
     def __init__(self):
         self.known_agents = {
@@ -21,6 +21,7 @@ class GameBalanceCoordinator:
         self.httpx_client = None
         self.delegation_tools = []
         self.executor = ThreadPoolExecutor(max_workers=5)
+        self.active_tasks = {}  # agent_name → task_id (for multi-turn conversations)
     
     async def discover_agents(self):
         """Discover agents by fetching their agent cards"""
@@ -46,10 +47,25 @@ class GameBalanceCoordinator:
         
         print("\n" + "="*80)
     
-    async def send_a2a_message(self, agent_name: str, agent_url: str, query: str) -> str:
-        """Send message to agent via A2A protocol"""
+    async def send_a2a_message(self, agent_name: str, agent_url: str, query: str, continue_task: bool = False) -> str:
+        """Send message to agent via A2A protocol with Task-based session support
+        
+        Args:
+            agent_name: Name of the target agent
+            agent_url: URL of the target agent
+            query: Query to send
+            continue_task: If True, continue previous Task conversation
+        """
         print(f"\n[GAME BALANCE] 📤 Sending A2A message to {agent_name}")
         print(f"[GAME BALANCE]    Query: {query[:100]}...")
+        
+        # Get existing task_id if continuing conversation
+        task_id = None
+        if continue_task and agent_name in self.active_tasks:
+            task_id = self.active_tasks[agent_name]
+            print(f"[GAME BALANCE]    📝 Continuing Task: {task_id}")
+        else:
+            print(f"[GAME BALANCE]    🆕 Creating new Task")
         
         try:
             # Create new httpx client for this request (thread-safe)
@@ -67,9 +83,19 @@ class GameBalanceCoordinator:
                 )
                 
                 response_text = None
-                async for event in a2a_client.send_message(msg):
+                returned_task_id = None
+                
+                # Send message with optional task_id
+                async for event in a2a_client.send_message(msg, task_id=task_id):
                     if isinstance(event, tuple) and len(event) > 0:
                         event = event[0]
+                    
+                    # Extract task_id from response
+                    if hasattr(event, 'task') and event.task:
+                        returned_task_id = event.task.id
+                        if returned_task_id:
+                            self.active_tasks[agent_name] = returned_task_id
+                            print(f"[GAME BALANCE]    💾 Saved Task ID: {returned_task_id}")
                     
                     if hasattr(event, 'artifacts') and event.artifacts:
                         for artifact in event.artifacts:
@@ -106,14 +132,31 @@ class GameBalanceCoordinator:
             def make_tool(name, url, desc):
                 tool_name = f"call_{name.lower().replace(' ', '_').replace('-', '_')}"
                 
-                def delegation_function(query: str) -> str:
+                def delegation_function(query: str, continue_conversation: bool = False) -> str:
+                    """Call agent with optional conversation continuation
+                    
+                    Args:
+                        query: The question or task to send to the agent
+                        continue_conversation: If True, continue previous conversation with this agent.
+                                             Use this for follow-up questions to maintain context.
+                    
+                    Returns:
+                        Response from the agent
+                    
+                    Example:
+                        # First call - new conversation
+                        result1 = call_agent("What is the win rate?")
+                        
+                        # Follow-up - continue conversation
+                        result2 = call_agent("Show me details for Terran", continue_conversation=True)
+                    """
                     # Run in separate thread with its own event loop
                     def run_async_in_thread():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         try:
                             return loop.run_until_complete(
-                                self.send_a2a_message(name, url, query)
+                                self.send_a2a_message(name, url, query, continue_task=continue_conversation)
                             )
                         finally:
                             loop.close()
@@ -127,9 +170,17 @@ class GameBalanceCoordinator:
                 
 Args:
     query: The question or task to send to the agent
+    continue_conversation: If True, continue previous conversation (maintains context)
     
 Returns:
     Response from {name}
+    
+Example:
+    # New conversation
+    {tool_name}("What is the win rate?")
+    
+    # Continue conversation
+    {tool_name}("Show details for Terran", continue_conversation=True)
 """
                 return tool(delegation_function)
             
@@ -157,6 +208,14 @@ Returns:
 2. 그 다음 CS Feedback Agent를 호출하여 플레이어 컴플레인을 가져옵니다
 3. 두 응답을 신중하게 분석합니다
 4. 종합적인 밸런스 권장사항을 제공합니다
+
+**멀티턴 대화 (중요!):**
+- 같은 에이전트에게 연속 질문할 때는 `continue_conversation=True`를 사용하세요
+- 예시:
+  * 첫 질문: call_data_analysis_agent("승률 알려줘")
+  * 추가 질문: call_data_analysis_agent("테란 상세 데이터 줘", continue_conversation=True)
+- continue_conversation=True를 사용하면 이전 대화 내용을 기억합니다
+- 새로운 주제로 바꿀 때는 continue_conversation=False (기본값)
 
 구체적이고 데이터 기반의 분석을 제공하세요. 항상 도구를 사용하여 정보를 수집하세요.
 
