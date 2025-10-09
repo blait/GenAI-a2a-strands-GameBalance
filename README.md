@@ -4,6 +4,27 @@
 
 <img width="1187" height="1145" alt="image" src="https://github.com/user-attachments/assets/26fab216-7c21-43f7-9633-9dc91845cb8c" />
 
+## 빠른 시작
+
+```bash
+# 1. 가상환경 설정
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. AWS 설정
+aws configure
+
+# 3. 시스템 실행
+./restart_all.sh  # 에이전트 시작
+./run_gui.sh      # GUI 시작
+
+# 4. 접속
+# http://localhost:8501 - Balance Agent (메인)
+# http://localhost:8502 - CS Feedback Agent  
+# http://localhost:8503 - Data Analysis Agent
+```
+
 
 ## 아키텍처
 
@@ -39,76 +60,75 @@
 
 ## 설치 및 실행
 
-### 1. 의존성 설치
+### 1. Python 가상환경 설정
 ```bash
+# 가상환경 생성 (프로젝트 루트에서)
+python3 -m venv venv
+
+# 가상환경 활성화
+source venv/bin/activate  # macOS/Linux
+# 또는
+venv\Scripts\activate     # Windows
+
+# 의존성 설치
 pip install -r requirements.txt
 ```
 
 ### 2. AWS 자격 증명 설정
 ```bash
-# AWS CLI 설정 또는 환경 변수
+# AWS CLI 설정
+aws configure
+
+# 또는 환경 변수 설정
 export AWS_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
 ```
 
-### 3. 전체 시스템 시작
+### 3. 시스템 실행
 
-#### 에이전트 실행
+#### 방법 1: 자동 실행 스크립트 (권장)
 ```bash
-# 모든 에이전트 종료
-pkill -f "game_balance_agent|data_analysis_agent|cs_feedback_agent"
+# 모든 에이전트 자동 시작
+./restart_all.sh
 
-# 에이전트 시작 (순서 중요)
-cd "/Users/hyeonsup/aws goa 2025/msk-a2a-demo/game-balance-a2a"
-venv/bin/python agents/cs_feedback_agent.py > /tmp/cs_agent.log 2>&1 &
-venv/bin/python agents/data_analysis_agent.py > /tmp/data_agent.log 2>&1 &
-sleep 3
-venv/bin/python agents/game_balance_agent.py > /tmp/balance_agent.log 2>&1 &
-
-# 포트 확인
-lsof -i :8000,9001,9002 | grep LISTEN
-```
-
-#### GUI 실행
-```bash
-# 모든 GUI 시작
+# GUI 실행
 ./run_gui.sh
-
-# 개별 GUI 실행
-venv/bin/streamlit run gui/balance_gui.py --server.port 8501
-venv/bin/streamlit run gui/cs_gui.py --server.port 8502
-venv/bin/streamlit run gui/analysis_gui.py --server.port 8503
 ```
+
+#### 방법 2: 수동 실행
+```bash
+# 가상환경이 활성화된 상태에서 실행
+
+# 1. 에이전트 실행 (순서 중요)
+python agents/cs_feedback_agent.py &
+python agents/data_analysis_agent.py &
+sleep 3
+python agents/game_balance_agent.py &
+
+# 2. GUI 실행 (각각 별도 터미널에서)
+streamlit run gui/balance_gui.py --server.port 8501 &
+streamlit run gui/cs_gui.py --server.port 8502 &
+streamlit run gui/analysis_gui.py --server.port 8503 &
+```
+
+### 4. 접속 및 테스트
 
 **GUI 접속:**
-- **Balance Agent GUI**: http://localhost:8501 (A2A Hub - 다른 에이전트 호출)
-- **CS Feedback Agent GUI**: http://localhost:8502 (피드백 조회)
-- **Data Analysis Agent GUI**: http://localhost:8503 (통계 분석)
+- **Balance Agent**: http://localhost:8501 (메인 - A2A 허브)
+- **CS Feedback Agent**: http://localhost:8502 (피드백 조회)  
+- **Data Analysis Agent**: http://localhost:8503 (통계 분석)
 
-**GUI 종료:**
+**CLI 테스트:**
 ```bash
-pkill -f streamlit
-```
-
-### 4. 테스트
-
-#### CLI 테스트
-```bash
-# 밸런스 분석 (A2A 호출 포함)
+# A2A 통신 흐름 시각화
 ./trace.sh "게임 밸런스 분석해줘"
 
-# 특정 종족 피드백
-./trace.sh "테란 피드백만 보여줘"
-
-# 승률 조회
-curl -X POST http://localhost:9001/ask \
+# 직접 API 호출
+curl -X POST http://localhost:9000/ask \
   -H "Content-Type: application/json" \
   -d '{"query": "테란 승률은?"}'
 ```
-
-#### GUI 테스트
-1. Balance Agent GUI (http://localhost:8501)에서 "게임 밸런스 분석해줘" 입력
-2. A2A 호출로 Data Agent와 CS Agent가 자동으로 호출됨
-3. 각 에이전트 GUI에서 직접 질문도 가능
 
 ## 시스템 구조
 
@@ -326,45 +346,59 @@ grep -i error /tmp/data_agent.log
 
 ## 문제 해결
 
-### "The tool result was too large!" 에러
-- **원인**: 에이전트가 대화 히스토리를 계속 쌓아서 메시지 크기 초과
-- **해결**: 위의 "에이전트 재시작" 절차 수행
-
-### 에이전트가 시작되지 않음
+### 가상환경 관련
 ```bash
-# 포트 확인
-lsof -i :9000
-lsof -i :9001
-lsof -i :9002
+# 가상환경이 활성화되지 않은 경우
+source venv/bin/activate
 
-# 프로세스 강제 종료
-kill -9 <PID>
+# 가상환경 확인
+which python  # venv/bin/python이 나와야 함
+
+# 의존성 재설치
+pip install -r requirements.txt
 ```
 
-### 에이전트 응답이 없음
+### 에이전트가 시작되지 않을 때
 ```bash
-# 로그에서 에러 확인
-tail -30 /tmp/balance_agent.log
+# 포트 사용 확인
+lsof -i :9000,9001,9002
 
-# 일반적인 에러:
-# - "Response ended prematurely": Bedrock 일시적 네트워크 에러 (재시도)
-# - "TimeoutError": 에이전트 응답 시간 초과 (재시작)
-# - "Connection refused": 에이전트가 실행되지 않음 (시작 필요)
+# 프로세스 강제 종료
+pkill -f "game_balance_agent|data_analysis_agent|cs_feedback_agent"
+
+# 재시작
+./restart_all.sh
+```
+
+### "too large" 에러 발생 시
+에이전트가 대화 히스토리를 계속 쌓아서 메시지 크기가 초과된 경우:
+```bash
+# 에이전트 재시작으로 히스토리 초기화
+./restart_all.sh
 ```
 
 ### AWS 자격 증명 오류
 ```bash
-# AWS CLI 설정 확인
+# 설정 확인
 aws configure list
-
-# 환경 변수 확인
 echo $AWS_REGION
+
+# 재설정
+aws configure
 ```
 
 ### Streamlit 연결 오류
-- 에이전트가 먼저 실행되어야 함
-- 포트 충돌 확인
-- 방화벽 설정 확인
+```bash
+# 에이전트가 먼저 실행되어야 함
+# 포트 충돌 확인
+lsof -i :8501,8502,8503
+
+# GUI 프로세스 종료
+pkill -f streamlit
+
+# GUI 재시작
+./run_gui.sh
+```
 
 ## 라이선스
 
