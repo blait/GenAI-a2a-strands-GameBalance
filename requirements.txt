@@ -1,6 +1,22 @@
-strands-agents
-strands-agents-tools
+# Core Strands packages
+strands-agents>=1.10.0
+strands-agents-tools>=0.2.9
+
+# A2A protocol support
 strands-agents[a2a]
 strands-agents-tools[a2a_client]
-boto3
-streamlit
+
+# AWS
+boto3>=1.40.0
+
+# Web framework
+fastapi>=0.118.0
+uvicorn>=0.37.0
+streamlit>=1.50.0
+
+# HTTP client
+httpx>=0.28.0
+httpx-sse>=0.4.0
+
+# Data processing
+pandas>=2.3.0
