@@ -48,6 +48,8 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 승률 알려줘)"):
                         data = json.loads(line[6:])
                         
                         if data['type'] == 'thinking':
+                            if thinking_text:  # 이미 thinking이 있으면 구분선 추가
+                                thinking_text += "\n\n" + "="*60 + "\n\n"
                             thinking_text += data['content']
                             with thinking_placeholder.expander("🧠 사고 과정 (실시간)", expanded=True):
                                 st.code(thinking_text)

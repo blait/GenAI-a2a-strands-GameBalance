@@ -9,6 +9,7 @@ import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.types import Message, Part, TextPart, Role
 from uuid import uuid4
+import json
 
 # A2A client for calling other agents
 class A2AClient:
@@ -33,6 +34,9 @@ class A2AClient:
         if agent_name not in self.cards:
             return f"Agent {agent_name} not available"
         
+        print(f"\n📤 [A2A Request] Calling {agent_name} agent")
+        print(f"   Query: {query}")
+        
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 config = ClientConfig(httpx_client=client, streaming=False)
@@ -56,8 +60,22 @@ class A2AClient:
                                 if hasattr(part.root, 'text'):
                                     response_text = part.root.text
                 
-                return response_text or "No response"
+                # Parse JSON response if present
+                if response_text:
+                    try:
+                        response_json = json.loads(response_text)
+                        message = response_json.get('message', response_text)
+                        print(f"📥 [A2A Response] From {agent_name} agent")
+                        print(f"   Response: {message[:200]}...")
+                        return message
+                    except:
+                        print(f"📥 [A2A Response] From {agent_name} agent")
+                        print(f"   Response: {response_text[:200]}...")
+                        return response_text
+                
+                return "No response"
         except Exception as e:
+            print(f"❌ [A2A Error] Failed to call {agent_name}: {e}")
             return f"Error: {e}"
 
 a2a_client = A2AClient()
@@ -108,7 +126,6 @@ agent = Agent(
 from game_balance_agent_executor import GameBalanceExecutor
 from starlette.routing import Route
 from starlette.responses import StreamingResponse
-import json
 import re
 
 async def ask_stream(request):
@@ -118,23 +135,72 @@ async def ask_stream(request):
     
     async def generate():
         try:
-            # Use invoke_async to get full response
-            result = await agent.invoke_async(query)
-            full_response = result.output if hasattr(result, 'output') else str(result)
+            import sys
+            import asyncio
+            import queue
+            import threading
             
-            # Extract and send thinking
-            thinking_matches = re.findall(r'<thinking>(.*?)</thinking>', full_response, re.DOTALL)
-            for thinking in thinking_matches:
-                yield f"data: {json.dumps({'type': 'thinking', 'content': thinking.strip()})}\n\n"
+            output_queue = queue.Queue()
             
-            # Send answer (remove thinking and response tags)
-            clean_response = re.sub(r'<thinking>.*?</thinking>', '', full_response, flags=re.DOTALL)
-            clean_response = re.sub(r'<response>|</response>', '', clean_response, flags=re.DOTALL).strip()
+            # Capture all stdout in real-time
+            class StreamCapture:
+                def __init__(self, original):
+                    self.original = original
+                
+                def write(self, text):
+                    self.original.write(text)
+                    self.original.flush()
+                    # Send text as-is, preserving newlines
+                    if text:
+                        output_queue.put(('stdout', text))
+                
+                def flush(self):
+                    self.original.flush()
             
-            if clean_response:
-                yield f"data: {json.dumps({'type': 'answer', 'content': clean_response})}\n\n"
+            # Run agent in thread
+            def run_agent():
+                old_stdout = sys.stdout
+                sys.stdout = StreamCapture(old_stdout)
+                try:
+                    result = agent(query)
+                    if hasattr(result, 'message') and hasattr(result.message, 'content'):
+                        response = result.message.content[0].text if result.message.content else ""
+                    else:
+                        response = str(result)
+                    output_queue.put(('final', response))
+                except Exception as e:
+                    output_queue.put(('error', str(e)))
+                finally:
+                    sys.stdout = old_stdout
+                    output_queue.put(('done', None))
+            
+            thread = threading.Thread(target=run_agent, daemon=True)
+            thread.start()
+            
+            # Stream all output in real-time
+            while True:
+                try:
+                    msg_type, content = output_queue.get(timeout=0.1)
+                    
+                    if msg_type == 'stdout':
+                        # Send all stdout as thinking, preserving newlines
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': content}, ensure_ascii=False)}\n\n"
+                    elif msg_type == 'final':
+                        # Send final answer
+                        clean = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
+                        clean = re.sub(r'<response>|</response>', '', clean, flags=re.DOTALL).strip()
+                        if clean:
+                            yield f"data: {json.dumps({'type': 'answer', 'content': clean})}\n\n"
+                    elif msg_type == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'content': content})}\n\n"
+                    elif msg_type == 'done':
+                        break
+                except queue.Empty:
+                    await asyncio.sleep(0.1)
             
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            thread.join(timeout=1)
+            
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
     

@@ -16,6 +16,32 @@ st.set_page_config(
     layout="wide"
 )
 
+# Add CSS to prevent horizontal scroll
+st.markdown("""
+<style>
+    .stCodeBlock {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        max-width: 100% !important;
+    }
+    .stExpander {
+        max-width: 100% !important;
+    }
+    .stExpander pre {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        max-width: 100% !important;
+    }
+    .stExpander code {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("⚖️ 게임 밸런스 에이전트")
 st.caption("다른 에이전트들과 A2A 통신하여 종합 밸런스 분석 제공")
 
@@ -67,10 +93,10 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 게임 밸런스 분
                         if data['type'] == 'thinking':
                             thinking_text += data['content']
                             with thinking_placeholder.expander("🧠 사고 과정 (실시간)", expanded=True):
-                                st.code(thinking_text)
+                                st.markdown(f"```\n{thinking_text}\n```")
                         elif data['type'] == 'answer':
                             answer_text += data['content']
-                            answer_placeholder.markdown(answer_text)
+                            answer_placeholder.markdown(answer_text.replace('\\n', '\n'))
                         elif data['type'] == 'done':
                             break
             
